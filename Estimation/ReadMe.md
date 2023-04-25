@@ -1,1 +1,5 @@
-![Image](https://github.com/SteinGater/Wheeled-legged-robot/blob/main/Estimation/Doc/ReadMe_en_1.png)
+![F1](https://github.com/SteinGater/Wheeled-legged-robot/blob/main/Estimation/Doc/ReadMe_en_1.png)
+![F2](https://github.com/SteinGater/Wheeled-legged-robot/blob/main/Estimation/Doc/ReadMe_en_2.png)
+![F3](https://github.com/SteinGater/Wheeled-legged-robot/blob/main/Estimation/Doc/ReadMe_en_3.png)
+![F4](https://github.com/SteinGater/Wheeled-legged-robot/blob/main/Estimation/Doc/ReadMe_en_4.png)
+![F5](https://github.com/SteinGater/Wheeled-legged-robot/blob/main/Estimation/Doc/ReadMe_en_5.png)
