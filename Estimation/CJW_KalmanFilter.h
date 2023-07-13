@@ -20,11 +20,14 @@
 #define EKF_IL      0   //MIT的IMU融合腿式机器人机身位置速度卡尔曼滤波
 #define EKF_EIL     1   //MIT+额外位置观测的腿式机器人机身位置速度卡尔曼滤波
 //支撑腿滑动阈值
-#define FOOT_SLIP_MIN 0.01
+#define FOOT_SLIP_MIN 1.0
 //摆动腿大噪声阈值
 #define SWING_NOISE   1000.0
 //平地支撑腿高度直接优化
 #define FOOT_PLANE   0
+
+//轮腿估计的支撑Z置信度
+#define LEG_Z_CONFIDENCE 100
 
 
 /****************************************腿式机器人机身位置速度卡尔曼滤波**************************/
@@ -139,7 +142,7 @@ protected:
     Eigen::Matrix<T,3,branchn> foot_dv;
     //腿式分支接触状态
     T foot_contact[branchn];
-    Eigen::Matrix<T,branchn,1> foot_z0;
+    Eigen::Matrix<T,3,branchn> foot_p0;
     //IMU加速度数据
     Eigen::Matrix<T,3,1> imu_acc;
     //外部观测数据
@@ -231,6 +234,11 @@ protected:
     //增加轮式里程计的状态变量
     T body_p_w_id;
     T body_v_w_id;
+    T body_p_l_id;
+    T body_v_l_id;
+    T foot_body_p_id;
+    T foot_body_v_id;
+    T wheel_body_v_id;
     /***************************************观测参数*************************/
     //轮式分支末端速度信息-绝对坐标系
     Eigen::Matrix<T,3,branchn> wheel_dv;

@@ -329,18 +329,19 @@ void CJW_Leg_Body_KF<T, branchn>::SetLegObs(Eigen::Matrix<T, 3, branchn> Footdp,
     int flag = 0;
     if (Contact(i, 0) >= 1)
     {
+      Eigen::Matrix<T,3,1> the_dp=foot_p0.block(0,i,3,1)-_x.block(foot_p_id+3 * i, 0,3,1);
       if (foot_contact[i] < 0) // 落地必有一次触发
       {
         flag = 1;
       }
-      else if (fabs(foot_z0(i, 0) - _x(foot_p_id + 2 + 3 * i, 0)) > FOOT_SLIP_MIN) // 滑动触发
+      else if (the_dp.norm() > FOOT_SLIP_MIN) // 滑动触发
       {
         flag = 1;
       }
     }
     if (flag)
     {
-      foot_z0(i, 0) = _x(foot_p_id + 2 + 3 * i, 0);
+      foot_p0.block(0,i,3,1) = _x.block(foot_p_id+3 * i, 0,3,1);
     }
     foot_contact[i] = Contact(i, 0);
   }
@@ -359,18 +360,22 @@ void CJW_Leg_Body_KF<T, branchn>::SetLegObs(T *Footdp, T *Footdv, T *Contact)
     int flag = 0;
     if (Contact[i] >= 1)
     {
+      Eigen::Matrix<T,3,1> the_dp=foot_p0.block(0,i,3,1)-_x.block(foot_p_id+3 * i, 0,3,1);
       if (foot_contact[i] < 1) // 落地必有一次触发
       {
         flag = 1;
       }
-      else if (fabs(foot_z0(i, 0) - _x(foot_p_id + 2 + 3 * i, 0)) > FOOT_SLIP_MIN) // 滑动触发
+      else if (the_dp.norm() > FOOT_SLIP_MIN) // 滑动触发
       {
         flag = 1;
       }
     }
     if (flag)
     {
-      foot_z0(i, 0) = _x(foot_p_id + 2 + 3 * i, 0);
+      for(int j=0;j<3;j++)
+      {
+        foot_p0(j,i) = _x(foot_p_id+3 * i+j, 0);
+      }
     }
     foot_contact[i] = Contact[i];
   }
@@ -469,7 +474,7 @@ void CJW_Leg_Body_KF<T, branchn>::Initial(T dt)
   _Q.setIdentity();
   _R.setIdentity();
   // 其他参数
-  foot_z0.setZero();
+  foot_p0.setZero();
 }
 // 腿式里程计加外部定位卡尔曼滤波方法滤波
 template <typename T, int branchn>
@@ -528,7 +533,7 @@ void CJW_Leg_Body_KF<T, branchn>::EstimateOnce(void)
     // 优化观测值
     _z.block(rindex1, 0, 3, 1) = -foot_dp.block(0, i, 3, 1);
     _z.block(rindex2, 0, 3, 1) = (1.0f - trust) * v0 + trust * (-foot_dv.block(0, i, 3, 1));
-    _z(rindex3, 0) = (1.0f - trust) * (p0(2) + foot_dp(2, i)) + FOOT_PLANE * trust * foot_z0(i, 0);
+    _z(rindex3, 0) = (1.0f - trust) * (p0(2) + foot_dp(2, i)) + FOOT_PLANE * trust * foot_p0(2, i);
   }
   // 标准卡尔曼滤波
   KFonce();
@@ -713,41 +718,44 @@ void CJW_WheelLeg_Body_KF<T, branchn>::SetType(int Type)
   this->body_v_id = 3;
   body_p_w_id = 6;
   body_v_w_id = 9;
-  this->foot_p_id = 12;
+  this->foot_p_id = 9;
+  //观测变量ID
+  foot_body_p_id = 0;
+  foot_body_v_id = 3*branchn;
+  wheel_body_v_id = 6*branchn;
 }
 // 滤波初始化
 template <typename T, int branchn>
 void CJW_WheelLeg_Body_KF<T, branchn>::Initial(T dt)
 {
   this->T_predict = dt;
+  Eigen::Matrix<T, 3, 3> I0 = Eigen::Matrix<T, 3, 3>::Identity();
   // 初始化状态方程和协方差
   this->_A.setIdentity();
-  this->_A.block(0, 3, 3, 3) = dt * Eigen::Matrix<T, 3, 3>::Identity();
-  this->_A.block(6, 9, 3, 3) = dt * Eigen::Matrix<T, 3, 3>::Identity();
+  this->_A.block(0, 3, 3, 3) = dt * I0;
   this->_B.setZero();
-  this->_B.block(0, 0, 3, 3) = 0.5 * dt * dt * Eigen::Matrix<T, 3, 3>::Identity();
-  this->_B.block(3, 0, 3, 3) = dt * Eigen::Matrix<T, 3, 3>::Identity();
-  this->_B.block(6, 0, 3, 3) = 0.5 * dt * dt * Eigen::Matrix<T, 3, 3>::Identity();
-  this->_B.block(9, 0, 3, 3) = dt * Eigen::Matrix<T, 3, 3>::Identity();
-  Eigen::Matrix<T, 3, 3> I0 = Eigen::Matrix<T, 3, 3>::Identity();
+  this->_B.block(0, 0, 3, 3) = 0.5 * dt * dt * I0;
+  this->_B.block(3, 0, 3, 3) = dt * I0;
   this->_C.setZero();
   for (int ii = 0; ii < branchn; ii++)
   {
-    this->_C.block(3 * ii, 0, 3, 3) = I0;
-    this->_C.block(3 * ii, 6, 3, 3) = -I0;
-    this->_C.block(3 * ii, 12 + 3 * ii, 3, 3) = -I0;
-    this->_C.block(3 * (branchn + ii), 3, 3, 3) = I0;
-    this->_C.block(3 * (branchn + ii), 9, 3, 3) = -I0;
-    this->_C.block(3 * (2 * branchn + ii), 9, 3, 3) = I0;
+    int ii3=3*ii;
+    this->_C.block(ii3, this->body_p_id, 3, 3) = I0;
+    //this->_C.block(ii3, body_p_w_id, 3, 3) = -1.0*I0;
+    this->_C.block(ii3, this->foot_p_id + ii3, 3, 3) = -1.0*I0;
+    this->_C.block(foot_body_v_id+ii3, this->body_v_id, 3, 3) = I0;
+    this->_C.block(foot_body_v_id+ii3, body_v_w_id, 3, 3) = -1.0*I0;
+    this->_C.block(wheel_body_v_id+ii3, body_v_w_id, 3, 3) = I0;
   }
   if (this->KF_Type == EKF_EIL)
   {
-    this->_C.block(9*branchn, 0, 3, 3) = I0;
-    this->_C.block(9*branchn+3, 3, 3, 3) = I0;
+    this->_C.block(this->ZN-6, 0, 3, 3) = I0;
+    this->_C.block(this->ZN-3, 3, 3, 3) = I0;
   }
   this->_P.setIdentity();
-  this->_P = T(100) * this->_P;
+  this->_P = T(100.0) * this->_P;
   this->_Q.setIdentity();
+  this->_R.setIdentity();
 }
 //腿式里程计加外部定位卡尔曼滤波方法滤波
 template <typename T, int branchn>
@@ -764,28 +772,28 @@ void CJW_WheelLeg_Body_KF<T, branchn>::EstimateOnce(void)
   T Kvbfw = this->Para(7);
   T Kpex = this->Para(8);
   T Kvex = this->Para(9);
-  // 基准噪声
+  //基准噪声
   Eigen::Matrix<T, 3, 3> I0 = Eigen::Matrix<T, 3, 3>::Identity();
   this->_Q.setIdentity();
-  this->_Q.block(0, 0, 3, 3) = Kpb * I0;
-  this->_Q.block(3, 3, 3, 3) = Kvb * I0;
-  this->_Q.block(6, 6, 3, 3) = Kpbw * I0;
-  this->_Q.block(9, 9, 3, 3) = Kvbw * I0;
-  this->_Q.block(12, 12, 3 * branchn, 3 * branchn) = Kpf * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
+  this->_Q.block(this->body_p_id, this->body_p_id, 3, 3) = this->T_predict*Kpb * I0;
+  this->_Q.block(this->body_v_id, this->body_v_id, 3, 3) = this->T_predict*Kvb * I0;
+  this->_Q.block(body_p_w_id, body_p_w_id, 3, 3) = this->T_predict*Kpbw * I0;
+  this->_Q.block(body_v_w_id, body_v_w_id, 3, 3) = this->T_predict*Kvbw * I0;
+  this->_Q.block(this->foot_p_id, this->foot_p_id, 3 * branchn, 3 * branchn) = this->T_predict*Kpf * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
   this->_R.setIdentity();
-  this->_R.block(0, 0, 3 * branchn, 3 * branchn) = Kpbf * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
-  this->_R.block(3 * branchn, 3 * branchn, 3 * branchn, 3 * branchn) = Kvbfl * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
-  this->_R.block(6 * branchn, 6 * branchn, 3 * branchn, 3 * branchn) = Kvbfw * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
+  this->_R.block(foot_body_p_id, foot_body_p_id, 3 * branchn, 3 * branchn) = Kpbf * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
+  this->_R.block(foot_body_v_id, foot_body_v_id, 3 * branchn, 3 * branchn) = Kvbfl * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
+  this->_R.block(wheel_body_v_id, wheel_body_v_id, 3 * branchn, 3 * branchn) = Kvbfw * Eigen::Matrix<T, 3 * branchn, 3 * branchn>::Identity();
   if (this->KF_Type == EKF_EIL)
   {
-    this->_R.block(9*branchn, 9*branchn, 3, 3) = Kpex * I0;
-    this->_R.block(9*branchn+3, 9*branchn+3, 3, 3) = Kvex * I0;
+    this->_R.block(this->ZN-6, this->ZN-6, 3, 3) = Kpex * I0;
+    this->_R.block(this->ZN-3, this->ZN-3, 3, 3) = Kvex * I0;
   }
   // 机身状态缓存
-  Eigen::Matrix<T, 3, 1> p0 = this->_x.block(0, 0, 3, 1);
-  Eigen::Matrix<T, 3, 1> v0 = this->_x.block(3, 0, 3, 1);
-  Eigen::Matrix<T, 3, 1> p0w = this->_x.block(6, 0, 3, 1);
-  Eigen::Matrix<T, 3, 1> v0w = this->_x.block(9, 0, 3, 1);
+  Eigen::Matrix<T, 3, 1> p0 = this->_x.block(this->body_p_id, 0, 3, 1);
+  Eigen::Matrix<T, 3, 1> v0 = this->_x.block(this->body_v_id, 0, 3, 1);
+  Eigen::Matrix<T, 3, 1> p0w = this->_x.block(body_p_w_id, 0, 3, 1);
+  Eigen::Matrix<T, 3, 1> v0w = this->_x.block(body_v_w_id, 0, 3, 1);
   // 载入IMU
   this->_u = this->imu_acc;
   // 分支状态观测数值优化
@@ -793,36 +801,55 @@ void CJW_WheelLeg_Body_KF<T, branchn>::EstimateOnce(void)
   {
     // 摆动支撑置信区间
     T trust = fmin(this->foot_contact[i], T(1));
+    T foot_dz=this->_x(this->foot_p_id+3*i+2,0)-this->foot_p0(2,i)*FOOT_PLANE;
     T thek0 = 1 + SWING_NOISE * (1 - trust);
+    T thek1 = 1 + SWING_NOISE * (1 - trust*(1-std::exp(-LEG_Z_CONFIDENCE*foot_dz*foot_dz)));
+    Eigen::Matrix<T, 3, 3> theIk=thek0*I0;
+    theIk(2,2)= thek1;
     // 腿分支计算缓存数据
-    int i1 = 3 * i;
-    int qindex = 12 + i1;
-    int rindex1 = i1;
-    int rindex2 = 3 * branchn + i1;
-    int rindex3 = 6 * branchn + i1;
+    int i3 = 3 * i;
+    int q_f = this->foot_p_id   + i3;
+    int r_fp = foot_body_p_id   + i3;
+    int r_fv = foot_body_v_id   + i3;
+    int r_wv = wheel_body_v_id  + i3;
     // 优化噪声
-    this->_Q.block(qindex, qindex, 3, 3) = thek0 * Kpf * (Eigen::Matrix<T, 3, 3>::Identity());
-    this->_R.block(rindex1, rindex1, 3, 3) = Kpbf * (Eigen::Matrix<T, 3, 3>::Identity());
-    this->_R.block(rindex2, rindex2, 3, 3) = thek0 * Kvbfl * (Eigen::Matrix<T, 3, 3>::Identity());
-    this->_R.block(rindex3, rindex3, 3, 3) = thek0 * Kvbfw * (Eigen::Matrix<T, 3, 3>::Identity());
+    this->_Q.block(q_f, q_f, 3, 3) = theIk * this->_Q.block(q_f, q_f, 3, 3);
+    this->_R.block(r_fp, r_fp, 3, 3) = this->_R.block(r_fp, r_fp, 3, 3);
+    this->_R.block(r_fv, r_fv, 3, 3) = thek0 * this->_R.block(r_fv, r_fv, 3, 3);
+    this->_R.block(r_wv, r_wv, 3, 3) = thek0 * this->_R.block(r_wv, r_wv, 3, 3);
     // 优化观测值
-    this->_z.block(rindex1, 0, 3, 1) = -this->foot_dp.block(0, i, 3, 1);
-    this->_z.block(rindex2, 0, 3, 1) = (1.0f - trust) * (v0 - v0w) + trust * (-this->foot_dv.block(0, i, 3, 1));
-    this->_z.block(rindex3, 0, 3, 1) = (1.0f - trust) * v0w + trust * (-wheel_dv.block(0, i, 3, 1));
+    this->_z.block(r_fp, 0, 3, 1) = -this->foot_dp.block(0, i, 3, 1);
+    this->_z.block(r_fv, 0, 3, 1) = (1.0f - trust) * (v0 - v0w) + trust * (-this->foot_dv.block(0, i, 3, 1));
+    this->_z.block(r_wv, 0, 3, 1) = (1.0f - trust) * v0w + trust * (-wheel_dv.block(0, i, 3, 1));
   }
   if (this->KF_Type == EKF_EIL)
   {
-    this->_z.block(9*branchn, 0, 3, 1) = this->ex_position;
-    this->_z.block(9*branchn+3, 0, 3, 1) = this->ex_velocity;
+    this->_z.block(this->ZN-6, 0, 3, 1) = this->ex_position;
+    this->_z.block(this->ZN-3, 0, 3, 1) = this->ex_velocity;
   }
   // 标准卡尔曼滤波
   this->KFonce();
-  // 防止计算结果出现不可逆的情况
-  if (this->_P.block(0, 0, 2, 2).determinant() > T(0.000001))
+  // 防止计算结果出现大数据的情况
+  /*if ((this->_P.block(this->body_p_id, this->body_p_id, 2, 2).determinant() > T(0.000001))
+      ||(this->_P.block(body_p_w_id, body_p_w_id, 2, 2).determinant() > T(0.000001)))
   {
-    this->_P.block(0, 2, 2, 10 + 3 * branchn).setZero();
-    this->_P.block(2, 0, 10 + 3 * branchn, 2).setZero();
-    this->_P.block(0, 0, 2, 2) /= T(10);
+    this->_P.block(this->body_p_id, this->body_p_id+2, 2, this->XN-2-this->body_p_id).setZero();
+    this->_P.block(this->body_p_id+2, this->body_p_id, this->XN-2-this->body_p_id, 2).setZero();
+    this->_P.block(body_p_w_id, body_p_w_id+2, 2, this->XN-2-body_p_w_id).setZero();
+    this->_P.block(body_p_w_id+2, body_p_w_id, this->XN-2-body_p_w_id, 2).setZero();
+    this->_P.block(this->body_p_id, this->body_p_id, 2, 2) /= T(10);
+    this->_P.block(body_p_w_id, body_p_w_id, 2, 2) /= T(10);
+  }*/
+  int NSS=2;
+  if ((this->_P.block(this->body_p_id, this->body_p_id, NSS, NSS).determinant() > T(0.000001))
+      ||(this->_P.block(body_p_w_id, body_p_w_id, NSS, NSS).determinant() > T(0.000001)))
+  {
+    this->_P.block(this->body_p_id, this->body_p_id+NSS, NSS, this->XN-NSS-this->body_p_id).setZero();
+    this->_P.block(this->body_p_id+NSS, this->body_p_id, this->XN-NSS-this->body_p_id, NSS).setZero();
+    this->_P.block(body_p_w_id, body_p_w_id+NSS, NSS, this->XN-NSS-body_p_w_id).setZero();
+    this->_P.block(body_p_w_id+NSS, body_p_w_id, this->XN-NSS-body_p_w_id, NSS).setZero();
+    this->_P.block(this->body_p_id, this->body_p_id, NSS, NSS) /= T(10);
+    this->_P.block(body_p_w_id, body_p_w_id, NSS, NSS) /= T(10);
   }
 }
 
